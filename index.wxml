@@ -1,0 +1,10 @@
+<view class="all">
+<button class="button" bindtap="getData">查询(OneNet)</button>
+
+<view class="kuangkuang">您查询的位置为：
+<view>经度为：{{result1}}</view>
+<view>纬度为：{{result2}}</view>
+</view>
+<button bindtap="openMap" class="tip">点击打开地图</button>
+
+</view>
