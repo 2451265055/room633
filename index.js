@@ -1,7 +1,8 @@
 Page({
   data:{
     result1:"",
-    result2:""
+    result2:"",
+    zhuangtai:""
     },
   
    
@@ -21,16 +22,18 @@ Page({
           var longitude = app.globalData.location1.datapoints[0].value
           app.globalData.location2 = res.data.data.datastreams[1]
           var latitude = app.globalData.location2.datapoints[0].value
-  
+          app.globalData.state = res.data.data.datastreams[2]
+          var state = app.globalData.state.datapoints[0].value
           that.setData({
             result1: longitude,
-            result2: latitude
+            result2: latitude,
+            zhuangtai:state
           })
-        }
+        },
   })
       },
-  
-      sendMessage:function(){
+  if(zhuangtai=1){
+      
         var CryptoJS = require("crypto-js");
         var request = require('request');
         var querystring = require('querystring');
@@ -97,3 +100,4 @@ Page({
       }
   
     })
+  
