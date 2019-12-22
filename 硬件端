@@ -1,0 +1,444 @@
+#include<SoftwareSerial.h>      //使用软串口的库文件
+#define configRED 7             //智能配网失败红灯亮起
+#define configGREEN 8           //智能配网成功绿灯亮起
+#define TcpLED 12               //OneNET的TCP连接灯
+#define EdpLED 6                //OneNET的EDP连接灯
+#define GPRMC_TERM "$GPRMC,"    //定义要解析的指令，因为这条指令包含定位和时间信息
+char nmeaSentence[68];
+String latitude;    //纬度
+String longitude;   //经度
+String lndSpeed;    //速度
+String gpsTime;     //UTC时间，本初子午线经度0度的时间，和北京时间差8小时
+String beiJingTime;   //北京时间
+bool link;                      //判断智能配网是否成功
+SoftwareSerial mySerial(10, 9);   // RX, TX
+void setup() {
+    mySerial.begin(9600);
+    pinMode(configRED,OUTPUT);      //没连上无线网
+    pinMode(configGREEN,OUTPUT);    //连上无线网
+    pinMode(TcpLED,OUTPUT);         //连上OneNET的TCP
+    pinMode(EdpLED,OUTPUT);         //连上OneNET的EDP
+}
+void loop() {
+mySerial.print("+++");
+delay(100);
+mySerial.print("+++");
+delay(100);
+digitalWrite(TcpLED, HIGH);
+analogWrite(EdpLED,255);
+digitalWrite(configGREEN, HIGH);
+digitalWrite(configRED, HIGH);
+while (!doCmdOk("AT+CWSTARTSMART=3", "OK",5));   //启动智能配网
+t1=0;
+Serial.println("Smartconfig Start");
+digitalWrite(testLED, HIGH);
+while (!doConfigOK("smartconfig connected wifi"));
+t1=0;
+    if(link==1){
+      Serial.println("do Config OK");
+      digitalWrite(configGREEN, LOW);
+      digitalWrite(testLED, LOW);
+      while (!doCmdOk("AT+CIPSTART=\"TCP\",\"183.230.40.39\",876","CONNECT",5));    //OneNET的TCP透传
+      t1=0;
+      digitalWrite(TcpLED, LOW);                      //tcp连接指示灯亮
+      Serial.println("TCP connect OK");
+      while (!doCmdOk("AT+CIPMODE=1", "OK",5));       //透传模式
+      t1=0;
+      while (!doCmdOk("AT+CIPSEND", ">",5));          //开始发送
+      t1=0;
+      link=1;
+      edp_connect=0;
+      keyOK=0;
+      Serial.println("Start send");
+    }
+    else {
+      Serial.println("do Config ERROR");
+      digitalWrite(configRED, LOW);
+      digitalWrite(testLED, LOW);
+    }
+    while (!doCmdOk("AT+CWSTOPSMART", "OK",5));         //不管ESP8266有没有连上wifi，都要释放内存
+    t1=0;
+booldoCmdOk(String data, char keyword[], int timeout){      //给ESP8266发送AT指令，在次数timeout范围内回应正确就返回TURE
+     bool result = false;
+     if (data != ""){                    
+        mySerial.println(data);    //发送AT指令
+        Serial.print("SEND: ");
+        Serial.println(data);
+     }
+     while (!mySerial.available());      // 等待模块回复
+     delay(200);
+     if (mySerial.find(keyword)){        //返回值判断
+        Serial.println("do cmd OK");
+        response=1;
+        result = true;
+     } else {
+        Serial.println("do cmd ERROR");
+        result = false;
+     }
+     while(mySerial.read()>= 0){}   //清空串口接收缓存
+     delay(800); //指令时间间隔
+     t1++;
+     if(t1>=timeout){         //超过设定时间，跳出循环，并返回回应判断response的值
+        result = true;
+        response=0;
+     }
+     return result;
+}
+
+booldoConfigOK(char keyword1[]){       //开启智能配网
+     bool result1 = false;
+     linktime=0;
+     while (!mySerial.available()){  // 等待模块回复,10秒内要配网完成
+        t1++;
+        delay(1000);
+        if(t1 >= 10){
+           linktime=1;
+           link=0;
+           result1 = true;
+           Serial.println("Config timeout");
+           break;            //超过时间串口没收到信号就跳出
+        }
+     }
+     if(linktime==0){
+        delay(200);
+        if (mySerial.find(keyword1)){   //返回值判断
+           link=1;
+           result1 = true;
+        } else {
+           link=0;
+           result1 = false;
+        }
+        while(mySerial.read()>= 0){}   //清空串口接收缓存
+        delay(500); //指令时间间隔
+     }
+     return result1;
+}
+if(link==1){               //当wifi连接上后，执行下面程序
+    if (!edp_connect){
+        while(mySerial.read()>= 0){}   //清空串口接收缓存
+        packetSend(packetConnect(ID, KEY));             //发送EPD连接包
+        while (!mySerial.available());                 //等待EDP连接应答
+        delay(200);
+        if ((tmp = mySerial.readBytes(rcv_pkt.data, sizeof(rcv_pkt.data))) > 0 ){    
+          rcvDebug(rcv_pkt.data, tmp);
+          if (rcv_pkt.data[0] == 0x20 && rcv_pkt.data[1] == 0x02 && rcv_pkt.data[2] == 0x00 && rcv_pkt.data[3] == 0x00)
+          {
+            edp_connect = 1;
+            analogWrite(EdpLED,0);
+            Serial.println("EDP connected.");
+          }
+          else
+            Serial.println("EDP connect error.");
+        }
+        packetClear(&rcv_pkt);
+      }
+  }
+for (unsigned long start = millis(); millis() - start < 1000;)  //一秒钟内不停扫描GPS信息
+  {
+    while (Serial.available())  //串口获取到数据开始解析
+    {
+      char c = Serial.read(); //读取一个字节获取的数据
+
+      switch(c)         //判断该字节的值
+      {
+      case '$':         //若是$，则说明是一帧数据的开始
+        Serial.readBytesUntil('*', nmeaSentence, 67);   //读取接下来的数据，存放在nmeaSentence字符数组中，最大存放67个字节
+        //Serial.println(nmeaSentence);
+        latitude = parseGprmcLat(nmeaSentence); //获取纬度值
+        longitude = parseGprmcLon(nmeaSentence);//获取经度值
+        lndSpeed = parseGprmcSpeed(nmeaSentence);//获取速度值
+        gpsTime = parseGprmcTime(nmeaSentence);//获取GPS时间
+
+
+        if(latitude > "")   //当不是空时候打印输出
+        {
+          Serial.println("------------------------------------");
+          Serial.println("latitude: " + latitude);
+        }
+
+        if(longitude > "")    //当不是空时候打印输出
+        {
+          Serial.println("longitude: " + longitude);
+        }  
+
+        if(lndSpeed > "")   //当不是空时候打印输出
+        {
+          Serial.println("Speed (knots): " + lndSpeed);
+        }
+
+        if(gpsTime > "")    //当不是空时候打印输出
+        {
+          Serial.println("gpsTime: " + gpsTime);
+          beiJingTime = getBeiJingTime(gpsTime);  //获取北京时间 
+          Serial.println("beiJingTime: " + beiJingTime);        
+        }   
+      }
+    }
+  }
+
+String getBeiJingTime(String s)
+{
+  int hour = s.substring(0,2).toInt();
+  int minute = s.substring(2,4).toInt();
+  int second = s.substring(4,6).toInt();
+
+  hour += 8;
+
+  if(hour > 24)
+    hour -= 24;
+  s = String(hour) + String(minute) + String(second);
+  return s;
+}
+
+//Parse GPRMC NMEA sentence data from String
+//String must be GPRMC or no data will be parsed
+//Return Latitude
+String parseGprmcLat(String s)
+{
+  int pLoc = 0; //paramater location pointer
+  int lEndLoc = 0; //lat parameter end location
+  int dEndLoc = 0; //direction parameter end location
+  String lat;
+  /*make sure that we are parsing the GPRMC string. 
+   Found that setting s.substring(0,5) == "GPRMC" caused a FALSE.
+   There seemed to be a 0x0D and 0x00 character at the end. */
+  if(s.substring(0,4) == "GPRM")
+  {
+    //Serial.println(s);
+    for(int i = 0; i < 5; i++)
+    {
+      if(i < 3) 
+      {
+        pLoc = s.indexOf(',', pLoc+1);
+        /*Serial.print("i < 3, pLoc: ");
+         Serial.print(pLoc);
+         Serial.print(", ");
+         Serial.println(i);*/
+      }
+      if(i == 3)
+      {
+        lEndLoc = s.indexOf(',', pLoc+1);
+        lat = s.substring(pLoc+1, lEndLoc);
+        /*Serial.print("i = 3, pLoc: ");
+         Serial.println(pLoc);
+         Serial.print("lEndLoc: ");
+         Serial.println(lEndLoc);*/
+      }
+      else
+      {
+        dEndLoc = s.indexOf(',', lEndLoc+1);
+        lat = lat + " " + s.substring(lEndLoc+1, dEndLoc);
+        /*Serial.print("i = 4, lEndLoc: ");
+         Serial.println(lEndLoc);
+         Serial.print("dEndLoc: ");
+         Serial.println(dEndLoc);*/
+      }
+    }
+    return lat; 
+  }
+  //}
+  //}
+}
+
+//Parse GPRMC NMEA sentence data from String
+//String must be GPRMC or no data will be parsed
+//Return Longitude
+String parseGprmcLon(String s)
+{
+  int pLoc = 0; //paramater location pointer
+  int lEndLoc = 0; //lat parameter end location
+  int dEndLoc = 0; //direction parameter end location
+  String lon;
+
+  /*make sure that we are parsing the GPRMC string. 
+   Found that setting s.substring(0,5) == "GPRMC" caused a FALSE.
+   There seemed to be a 0x0D and 0x00 character at the end. */
+  if(s.substring(0,4) == "GPRM")
+  {
+    //Serial.println(s);
+    for(int i = 0; i < 7; i++)
+    {
+      if(i < 5) 
+      {
+        pLoc = s.indexOf(',', pLoc+1);
+        /*Serial.print("i < 3, pLoc: ");
+         Serial.print(pLoc);
+         Serial.print(", ");
+         Serial.println(i);*/
+      }
+      if(i == 5)
+      {
+        lEndLoc = s.indexOf(',', pLoc+1);
+        lon = s.substring(pLoc+1, lEndLoc);
+        /*Serial.print("i = 3, pLoc: ");
+         Serial.println(pLoc);
+         Serial.print("lEndLoc: ");
+         Serial.println(lEndLoc);*/
+      }
+      else
+      {
+        dEndLoc = s.indexOf(',', lEndLoc+1);
+        lon = lon + " " + s.substring(lEndLoc+1, dEndLoc);
+        /*Serial.print("i = 4, lEndLoc: ");
+         Serial.println(lEndLoc);
+         Serial.print("dEndLoc: ");
+         Serial.println(dEndLoc);*/
+      }
+    }
+    return lon; 
+  }
+}
+
+//Parse GPRMC NMEA sentence data from String
+//String must be GPRMC or no data will be parsed
+//Return Longitude
+String parseGprmcSpeed(String s)
+{
+  int pLoc = 0; //paramater location pointer
+  int lEndLoc = 0; //lat parameter end location
+  int dEndLoc = 0; //direction parameter end location
+  String lndSpeed;
+
+  /*make sure that we are parsing the GPRMC string. 
+   Found that setting s.substring(0,5) == "GPRMC" caused a FALSE.
+   There seemed to be a 0x0D and 0x00 character at the end. */
+  if(s.substring(0,4) == "GPRM")
+  {
+    //Serial.println(s);
+    for(int i = 0; i < 8; i++)
+    {
+      if(i < 7) 
+      {
+        pLoc = s.indexOf(',', pLoc+1);
+        /*Serial.print("i < 8, pLoc: ");
+         Serial.print(pLoc);
+         Serial.print(", ");
+         Serial.println(i);*/
+      }
+      else
+      {
+        lEndLoc = s.indexOf(',', pLoc+1);
+        lndSpeed = s.substring(pLoc+1, lEndLoc);
+        /*Serial.print("i = 8, pLoc: ");
+         Serial.println(pLoc);
+         Serial.print("lEndLoc: ");
+         Serial.println(lEndLoc);*/
+      }
+    }
+    return lndSpeed; 
+  }
+}
+
+
+//Parse GPRMC NMEA sentence data from String
+//String must be GPRMC or no data will be parsed
+//Return Longitude
+String parseGprmcTime(String s)
+{
+  int pLoc = 0; //paramater location pointer
+  int lEndLoc = 0; //lat parameter end location
+  int dEndLoc = 0; //direction parameter end location
+  String gpsTime;
+
+  /*make sure that we are parsing the GPRMC string. 
+   Found that setting s.substring(0,5) == "GPRMC" caused a FALSE.
+   There seemed to be a 0x0D and 0x00 character at the end. */
+  if(s.substring(0,4) == "GPRM")
+  {
+    //Serial.println(s);
+    for(int i = 0; i < 2; i++)
+    {
+      if(i < 1) 
+      {
+        pLoc = s.indexOf(',', pLoc+1);
+        /*Serial.print("i < 8, pLoc: ");
+         Serial.print(pLoc);
+         Serial.print(", ");
+         Serial.println(i);*/
+      }
+      else
+      {
+        lEndLoc = s.indexOf(',', pLoc+1);
+        gpsTime = s.substring(pLoc+1, lEndLoc);
+        /*Serial.print("i = 8, pLoc: ");
+         Serial.println(pLoc);
+         Serial.print("lEndLoc: ");
+         Serial.println(lEndLoc);*/
+      }
+    }
+    return gpsTime; 
+  }
+}
+
+// Turn char[] array into String object
+String charToString(char *c)
+{
+
+  String val = "";
+
+  for(int i = 0; i <= sizeof(c); i++) 
+  {
+    val = val + c[i];
+  }
+
+  return val;
+}
+
+#define lightread A0      //光敏电阻读取的数值
+ld_x=analogRead(lightread);   //光敏电阻接收的信号，信号是模拟值
+ld=(4490-4*ld_x)/49; 
+if (edp_connect && trigger){
+     Serial.print("LigthRead_x : "); Serial.println(ld_x);    //串口打印亮度（读值）
+     Serial.print("LigthRead_y : "); Serial.println(ld);      //串口打印亮度（计算值）
+     Serial.println(" ");
+     sprintf(ld1,"%d",ld);       //int型转换char型
+  if(ld<10){
+    packetSend(packetDataSaveTrans(NULL, "position",latitude,longitude ));
+     delay(2000);
+ }}
+while(mySerial.available()){     
+     readEdpPkt(&rcv_pkt);
+     if (isEdpPkt(&rcv_pkt)){
+        pkt_type = rcv_pkt.data[0]; 
+        switch (pkt_type){
+           case CMDREQ:
+           char edp_command[50];
+           char edp_cmd_id[40];
+           long id_len, cmd_len, rm_len;
+           char datastr[20];
+           char val[10];
+           memset(edp_command, 0,sizeof(edp_command));    //置0
+           memset(edp_cmd_id, 0,sizeof(edp_cmd_id));      //置0
+           edpCommandReqParse(&rcv_pkt,edp_cmd_id, edp_command, &rm_len, &id_len, &cmd_len);  //按照EDP命令请求协议，解析数据
+           Serial.print("rm_len: ");
+           Serial.println(rm_len, DEC);
+           delay(10);
+           Serial.print("id_len: ");
+           Serial.println(id_len, DEC);
+           delay(10);
+           Serial.print("cmd_len: ");
+           Serial.println(cmd_len, DEC);
+           delay(10);
+           Serial.print("id: ");
+           Serial.println(edp_cmd_id);
+           delay(10);
+           Serial.print("cmd: ");
+           Serial.println(edp_command);
+           sscanf(edp_command,"%[^:]:%s", datastr, val);
+           if (atoi(val) == 1){         //atoi()，int转换为char，把一个整数转换为字符串。
+                Serial.println("LEDon");   // 使Led亮
+                digitalWrite(testLED, HIGH);
+           }
+           else if(atoi(val) == 0){
+                Serial.println("LEDoff");   // 使Led灭
+                digitalWrite(testLED, LOW);
+           }
+           packetSend(packetDataSaveTrans(NULL,datastr,val)); //将新数据值上传至数据流
+           break;
+      default:
+           Serial.print("unknown type:");
+           Serial.println(pkt_type, HEX);
+           break;
+           }
+      }
+  }}
