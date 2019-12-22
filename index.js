@@ -7,7 +7,7 @@ Page({
   
    
     
-    getData: function () {
+    getData: function () {//查询函数，调用API获取ONENET平台上的信息
       var that=this;
       const requestTask = wx.request({
         url: 'https://api.heclouds.com/devices/23248275/datapoints?datastream_id=Light,HumanSensor&limit=1',
@@ -23,16 +23,16 @@ Page({
           app.globalData.location2 = res.data.data.datastreams[1]
           var latitude = app.globalData.location2.datapoints[0].value
           app.globalData.state = res.data.data.datastreams[2]
-          var state = app.globalData.state.datapoints[0].value
+          var state = app.globalData.state.datapoints[0].value//设置变量，获取设备传来的参数
           that.setData({
             result1: longitude,
             result2: latitude,
             zhuangtai:state
-          })
+          })//方便其他函数调用设备的参数
         },
   })
       },
-  if(zhuangtai=1){
+  if(zhuangtai=1){//发送短信
       
         var CryptoJS = require("crypto-js");
         var request = require('request');
@@ -92,7 +92,7 @@ Page({
     },
         
   
-    openMap: function (e) {
+    openMap: function (e) {//通过已知的经纬度打开地图
       wx.openLocation({
       longitude: Number(this.data.result1),
       latitude: Number(this.data.result2)
