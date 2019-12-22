@@ -1,0 +1,22 @@
+.kuangkuang{
+  border: 1px solid black;
+  width: 315px;
+  height: 100px;
+}
+.button{
+  background: rgba(224, 233, 104, 0.877);
+  margin-bottom: 80rpx ;
+}
+
+.tip{
+    background: rgba(172, 214, 226, 0.877);
+  margin-top: 80rpx ;
+}
+
+.all{
+  background-image: url(https://raw.githubusercontent.com/udacity/cn-wechat-weather/2-4/images/sunny-bg.png);
+  padding-top: 174rpx;
+  padding-bottom: 780rpx;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
